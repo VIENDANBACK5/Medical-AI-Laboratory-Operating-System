@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedAI-OS · 3D Clinical Suite</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel-light: #21262d;
+      --border: #30363d;
+      --border-focus: #58a6ff;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #2f81f7;
+      --accent-glow: rgba(47, 129, 247, 0.15);
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background-color: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+    
+    .app-container {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      height: 100vh;
+      width: 100vw;
+    }
+    
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow-y: auto;
+      padding: 20px;
+      gap: 16px;
+    }
+    
+    .main-viewport {
+      position: relative;
+      height: 100%;
+      width: 100%;
+      background: #0a0d14;
+    }
+    
+    #viewport {
+      width: 100%;
+      height: 100%;
+    }
+    
+    input, select, button {
+      width: 100%;
+      padding: 8px 12px;
+      background: #090d13;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      transition: all 0.2s ease-in-out;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      border: 1px solid transparent;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.1); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.ghost { background: transparent; border-color: var(--border); }
+    button.ghost:hover:not(:disabled) { background: var(--panel-light); }
+    button.success { background: #238636; }
+    
+    .section-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #10141b;
+      overflow: hidden;
+    }
+    .section-header {
+      padding: 10px 14px;
+      background: var(--panel-light);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .hidden { display: none !important; }
+    
+    .item-card {
+      padding: 10px 12px;
+      background: #090d13;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 6px;
+      transition: border-color 0.2s;
+      font-size: 12px;
+    }
+    .item-card:hover { border-color: var(--muted); }
+    .item-card.active { border-color: var(--accent); background: rgba(47, 129, 247, 0.08); }
+    .item-card-title { font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .item-card-sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    
+    .progress { height: 6px; background: #21262d; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+    
+    .console-log {
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+      font-size: 11px;
+      background: #090d13;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #c9d1d9;
+    }
+    .list { max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    
+    .hud-overlay {
+      position: absolute;
+      background: rgba(22, 27, 34, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+  </style>
+  <!-- Load Three.js core & loaders from CDNs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div>
+        <h2 style="font-size: 18px; font-weight: bold; color: var(--accent);">MedAI-OS Workspace</h2>
+        <p style="color: var(--muted); font-size: 11px; margin-top: 2px;">Bone Segmentations & Implant Fitting</p>
+      </div>
+
+      <!-- 1. API Node Settings -->
+      <div class="section-panel">
+        <div class="section-header" onclick="toggleSec('api')"><span>API Server Node</span><span id="api-icon">▼</span></div>
+        <div id="sec-api" class="section-body">
+          <input type="text" id="apiUrlInput" value="http://localhost:8000/api/v2" />
+        </div>
+      </div>
+
+      <!-- 2. Auth Panel -->
+      <div class="section-panel">
+        <div class="section-header" onclick="toggleSec('auth')"><span>Authentication</span><span id="auth-icon">▼</span></div>
+        <div id="sec-auth" class="section-body">
+          <div id="auth-logged-in" class="hidden">
+            <p style="font-size: 12px; margin-bottom: 8px;">Signed in as: <strong id="username-display" style="color: var(--success);">admin</strong></p>
+            <button class="ghost" onclick="handleLogout()">Log Out</button>
+          </div>
+          <div id="auth-logged-out">
+            <input type="text" id="usernameInput" value="admin" style="margin-bottom: 6px;" placeholder="Username" />
+            <input type="password" id="passwordInput" value="admin" style="margin-bottom: 8px;" placeholder="Password" />
+            <div style="display: flex; gap: 8px;">
+              <button onclick="handleLogin()">Log In</button>
+              <button class="ghost" onclick="handleRegister()">Register</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="clinical-workflows" class="hidden" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- 3. Ingestion -->
+        <div class="section-panel">
+          <div class="section-header" onclick="toggleSec('ingestion')"><span>Volumetric Ingestion</span><span id="ingestion-icon">▲</span></div>
+          <div id="sec-ingestion" class="section-body hidden">
+            <input type="file" id="fileInput" style="padding: 5px; margin-bottom: 6px;" />
+            <button onclick="handleUpload()">Upload DICOM/NIfTI</button>
+            <div id="uploadProgressContainer" class="hidden" style="margin-top: 6px;">
+              <div class="progress"><div id="uploadProgressBar"></div></div>
+            </div>
+            <div style="margin-top: 10px;">
+              <p style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">Available Scans:</p>
+              <div id="volumeList" class="list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Segmentation -->
+        <div class="section-panel">
+          <div class="section-header" onclick="toggleSec('segment')"><span>AI Segmentation</span><span id="segment-icon">▲</span></div>
+          <div id="sec-segment" class="section-body hidden">
+            <div style="margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--muted);">Segmentation Model</label>
+              <select id="segModelSelect">
+                <option value="totalsegmentator_bone">TotalSegmentator Bone (Pretrained)</option>
+                <option value="mock_bone_seg">Mock Bone Segmentation (Thresholding)</option>
+              </select>
+            </div>
+            <button onclick="runSegmentation()">Run AI Segmentation</button>
+            <div style="margin-top: 10px;">
+              <p style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">Output Masks:</p>
+              <div id="maskList" class="list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Reconstruction -->
+        <div class="section-panel">
+          <div class="section-header" onclick="toggleSec('recon')"><span>3D Mesh Reconstruction</span><span id="recon-icon">▲</span></div>
+          <div id="sec-recon" class="section-body hidden">
+            <div style="margin-bottom: 6px;">
+              <label style="font-size: 11px; color: var(--muted);">Smoothing Iterations</label>
+              <input type="number" id="smoothInput" value="10" />
+            </div>
+            <div style="margin-bottom: 6px;">
+              <label style="font-size: 11px; color: var(--muted);">Decimate Ratio (0.1 = 10%)</label>
+              <input type="number" id="decimateInput" step="0.05" value="0.5" />
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--muted);">Mesh Export Format</label>
+              <select id="meshFormatSelect">
+                <option value="stl">STL (Standard)</option>
+                <option value="obj">OBJ (CAD)</option>
+                <option value="ply">PLY (Vertex color)</option>
+              </select>
+            </div>
+            <button class="success" onclick="runReconstruction()">Generate Mesh</button>
+            <div style="margin-top: 10px;">
+              <p style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">Reconstructed Meshes:</p>
+              <div id="meshList" class="list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Implant Recommendation -->
+        <div class="section-panel">
+          <div class="section-header" onclick="toggleSec('implant')"><span>Implant PSI Design</span><span id="implant-icon">▲</span></div>
+          <div id="sec-implant" class="section-body hidden">
+            <div style="margin-bottom: 6px;">
+              <label style="font-size: 11px; color: var(--muted);">Generative Model</label>
+              <select id="implantModelSelect">
+                <option value="mirror_implant">Symmetric Mirroring</option>
+                <option value="pointnet_impl">PointNet Completer</option>
+              </select>
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--muted);">Implant Export Format</label>
+              <select id="implantFormatSelect">
+                <option value="stl">STL Mesh</option>
+                <option value="obj">OBJ CAD Format</option>
+                <option value="ply">PLY Format</option>
+              </select>
+            </div>
+            <button style="background: #bf5af2;" onclick="runImplant()">Generate PSI Implant</button>
+            <div style="margin-top: 10px;">
+              <p style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">Generated PSI Implants:</p>
+              <div id="implantList" class="list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div style="margin-top: auto;">
+        <p style="font-size: 11px; font-weight: bold; color: var(--muted); margin-bottom: 4px;">Console Logs</p>
+        <div id="consoleLog" class="console-log">Initialize server connection to begin.</div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport Area -->
+    <main class="main-viewport">
+      <div id="viewport"></div>
+
+      <!-- HUD Controls Overlay -->
+      <div class="hud-overlay" style="top: 20px; left: 20px; width: 240px;">
+        <h4 style="font-size: 12px; font-weight: bold; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 6px;">Viewport Options</h4>
+        <div style="display: flex; gap: 6px;">
+          <button class="ghost" style="padding: 6px; font-size: 11px;" onclick="toggleWireframe()">Wireframe</button>
+          <button class="ghost" style="padding: 6px; font-size: 11px;" onclick="clearCanvas()">Clear View</button>
+        </div>
+        <button id="downloadBoneBtn" class="ghost hidden" style="font-size: 11px;">📥 Download Bone Mesh</button>
+        <button id="downloadImplantBtn" style="font-size: 11px; background: #bf5af2; display: none;" class="hidden">📥 Download Implant Mesh</button>
+      </div>
+
+      <!-- HUD Printability report Overlay -->
+      <div id="printReportPanel" class="hud-overlay hidden" style="bottom: 20px; right: 20px; width: 320px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 6px;">
+          <h4 style="font-size: 12px; font-weight: bold; color: var(--accent);">3D Printability Report</h4>
+          <span id="printReadyPill" style="font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 999px;">READY</span>
+        </div>
+        <div style="font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; color: var(--muted);">
+          <div>Watertight: <strong id="printWatertight" style="color: var(--success);">YES</strong></div>
+          <div>Consistent: <strong id="printConsistent" style="color: var(--success);">YES</strong></div>
+          <div>Euler Number: <strong id="printEuler" style="color: var(--text);">2</strong></div>
+          <div>Surface Area: <strong id="printArea" style="color: var(--text);">0 mm²</strong></div>
+          <div>Volume: <strong id="printVolume" style="color: var(--text);">0 mm³</strong></div>
+        </div>
+        <div id="printIssuesList" style="border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px;" class="hidden">
+          <p style="font-size: 10px; font-weight: bold; color: var(--danger);">Calibration Issues:</p>
+          <ul id="printIssuesUl" style="font-size: 10px; color: var(--warning); padding-left: 12px;"></ul>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ---------- State Management ----------
+    const state = {
+      apiUrl: localStorage.getItem('apiUrl') || 'http://localhost:8000/api/v2',
+      token: localStorage.getItem('token') || '',
+      selectedVolumeId: null,
+      selectedMaskId: null,
+      selectedMeshId: null,
+      selectedImplantId: null,
+      wireframe: false
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function log(msg, type = 'info') {
+      const el = $('consoleLog');
+      const timestamp = new Date().toLocaleTimeString();
+      const txt = `[${timestamp}] [${type.toUpperCase()}] ${msg}`;
+      if (el.innerHTML === 'Initialize server connection to begin.') {
+        el.innerHTML = txt;
+      } else {
+        el.innerHTML += '\n' + txt;
+      }
+      el.scrollTop = el.scrollHeight;
+    }
+
+    // Toggle Section helper
+    function toggleSec(sec) {
+      const panel = $('sec-' + sec);
+      const icon = $(sec + '-icon');
+      if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        icon.innerText = '▼';
+      } else {
+        panel.classList.add('hidden');
+        icon.innerText = '▲';
+      }
+    }
+
+    // ---------- API fetch wrapper ----------
+    async function request(endpoint, method = 'GET', body = null, isMultipart = false) {
+      const headers = {};
+      if (state.token) {
+        headers['Authorization'] = `Bearer ${state.token}`;
+      }
+      const options = { method, headers };
+      if (body) {
+        if (isMultipart) {
+          options.body = body;
+        } else {
+          headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+      }
+      let targetUrl = `${state.apiUrl}${endpoint}`;
+      if (endpoint.startsWith('/auth/')) {
+        // Auth is mounted directly on /api/auth without version prefixes
+        const apiRoot = state.apiUrl.replace(/\/v\d+$/, '');
+        targetUrl = `${apiRoot}${endpoint}`;
+      }
+      const res = await fetch(targetUrl, options);
+      if (res.status === 204) return null;
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || res.statusText);
+      return payload;
+    }
+
+    // ---------- Auth Actions ----------
+    async function handleLogin() {
+      try {
+        state.apiUrl = $('apiUrlInput').value.trim();
+        log('Connecting and authenticating...', 'info');
+        
+        const res = await request('/auth/login', 'POST', {
+          username: $('usernameInput').value,
+          password: $('passwordInput').value
+        });
+        state.token = res.data.access_token;
+        localStorage.setItem('token', state.token);
+        localStorage.setItem('username', $('usernameInput').value);
+        localStorage.setItem('apiUrl', state.apiUrl);
+        
+        $('username-display').innerText = $('usernameInput').value;
+        $('auth-logged-in').classList.remove('hidden');
+        $('auth-logged-out').classList.add('hidden');
+        $('clinical-workflows').classList.remove('hidden');
+        
+        log('Login successful. System online.', 'success');
+        refreshVolumes();
+        refreshMeshes();
+        refreshImplants();
+      } catch (err) {
+        log('Login failed: ' + err.message, 'error');
+      }
+    }
+
+    async function handleRegister() {
+      try {
+        state.apiUrl = $('apiUrlInput').value.trim();
+        log('Registering user account...', 'info');
+        const user = $('usernameInput').value.trim();
+        await request('/auth/register', 'POST', {
+          email: `${user}@example.com`,
+          username: user,
+          password: $('passwordInput').value,
+          dob: null,
+          gender: null,
+          first_name: null,
+          last_name: null,
+          full_name: user,
+          phone: null,
+          address: null,
+          identity_card: null,
+          identity_card_date: null,
+          identity_card_place: null
+        });
+        log('Registration complete. You can now Log In.', 'success');
+      } catch (err) {
+        log('Registration failed: ' + err.message, 'error');
+      }
+    }
+
+    function handleLogout() {
+      state.token = '';
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      localStorage.removeItem('apiUrl');
+      $('auth-logged-in').classList.add('hidden');
+      $('auth-logged-out').classList.remove('hidden');
+      $('clinical-workflows').classList.add('hidden');
+      clearCanvas();
+      log('Logged out. Session cleared.', 'info');
+    }
+
+    // ---------- Ingestion Scans ----------
+    async function refreshVolumes() {
+      try {
+        const res = await request('/volumes/all');
+        const listEl = $('volumeList');
+        listEl.innerHTML = '';
+        (res.data || []).forEach(v => {
+          const card = document.createElement('div');
+          card.className = 'item-card';
+          if (state.selectedVolumeId === v.id) card.className += ' active';
+          card.onclick = () => {
+            document.querySelectorAll('#volumeList .item-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            state.selectedVolumeId = v.id;
+            refreshMasks(v.id);
+            log(`Selected Scan Volume ${v.id}`, 'info');
+          };
+          card.innerHTML = `
+            <div class="item-card-title"><span>Volume ID: ${v.id}</span></div>
+            <div class="item-card-sub">Spacing: ${v.spacing.map(n => n.toFixed(1)).join(', ')}</div>
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        log('Fetch volumes failed: ' + err.message, 'error');
+      }
+    }
+
+    async function handleUpload() {
+      const file = $('fileInput').files[0];
+      if (!file) return;
+      try {
+        log('Uploading volume scan file: ' + file.name, 'info');
+        $('uploadProgressContainer').classList.remove('hidden');
+        $('uploadProgressBar').style.width = '30%';
+        
+        const fd = new FormData();
+        fd.append('file', file);
+        
+        $('uploadProgressBar').style.width = '60%';
+        const res = await request('/volumes/upload', 'POST', fd, true);
+        $('uploadProgressBar').style.width = '100%';
+        
+        log('Volume scan uploaded successfully. ID: ' + res.data.id, 'success');
+        refreshVolumes();
+        setTimeout(() => {
+          $('uploadProgressContainer').classList.add('hidden');
+          $('uploadProgressBar').style.width = '0%';
+        }, 1000);
+      } catch (err) {
+        log('Upload failed: ' + err.message, 'error');
+        $('uploadProgressContainer').classList.add('hidden');
+      }
+    }
+
+    // ---------- Segmentation ----------
+    async function refreshMasks(volId) {
+      try {
+        const res = await request('/inference/masks/all');
+        const listEl = $('maskList');
+        listEl.innerHTML = '';
+        (res.data || []).forEach(m => {
+          if (m.volume_id !== volId) return;
+          const card = document.createElement('div');
+          card.className = 'item-card';
+          if (state.selectedMaskId === m.id) card.className += ' active';
+          card.onclick = () => {
+            document.querySelectorAll('#maskList .item-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            state.selectedMaskId = m.id;
+            log(`Selected Bone Mask Output ${m.id}`, 'info');
+          };
+          card.innerHTML = `
+            <div class="item-card-title"><span>Mask ID: ${m.id}</span> <span style="color:var(--success);font-size:10px;">${m.model_name}</span></div>
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        log('Fetch masks failed: ' + err.message, 'error');
+      }
+    }
+
+    async function runSegmentation() {
+      if (!state.selectedVolumeId) {
+        log('Please select a volume scan first.', 'warning');
+        return;
+      }
+      try {
+        const model = $('segModelSelect').value;
+        log(`Starting segmentation inference task (${model}) on Server...`, 'info');
+        const res = await request(`/inference/segment/${state.selectedVolumeId}`, 'POST', {
+          model_name: model
+        });
+        const taskId = res.data.task_id;
+        log('Task enqueued. Tracking ID: ' + taskId, 'info');
+
+        let attempts = 0;
+        const check = setInterval(async () => {
+          attempts++;
+          if (attempts > 180) {
+            clearInterval(check);
+            log('Task polling timed out.', 'error');
+            return;
+          }
+          const task = await request(`/inference/tasks/${taskId}`);
+          if (task.data.status === 'SUCCESS') {
+            clearInterval(check);
+            log('Inference complete. Mask created: ID ' + task.data.result_id, 'success');
+            refreshMasks(state.selectedVolumeId);
+          } else if (task.data.status === 'FAILED') {
+            clearInterval(check);
+            log('Inference failed: ' + task.data.error, 'error');
+          }
+        }, 1000);
+      } catch (err) {
+        log('Inference start failed: ' + err.message, 'error');
+      }
+    }
+
+    // ---------- Reconstruction ----------
+    async function refreshMeshes() {
+      try {
+        const res = await request('/meshes/all');
+        const listEl = $('meshList');
+        listEl.innerHTML = '';
+        (res.data || []).forEach(m => {
+          const card = document.createElement('div');
+          card.className = 'item-card';
+          if (state.selectedMeshId === m.id) card.className += ' active';
+          card.onclick = () => {
+            document.querySelectorAll('#meshList .item-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            state.selectedMeshId = m.id;
+            loadGeometry(m.id, m.file_path.split('.').pop(), 'bone');
+            checkPrintability(m.id);
+          };
+          card.innerHTML = `
+            <div class="item-card-title"><span>Mesh ID: ${m.id}</span> <span style="font-size:10px; color:${m.is_watertight ? 'var(--success)' : 'var(--warning)'};">${m.is_watertight ? 'Watertight' : 'Non-manifold'}</span></div>
+            <div class="item-card-sub">Triangles: ${m.triangle_count.toLocaleString()}</div>
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        log('Fetch meshes failed: ' + err.message, 'error');
+      }
+    }
+
+    async function runReconstruction() {
+      if (!state.selectedMaskId) {
+        log('Select an AI segmentation mask output first.', 'warning');
+        return;
+      }
+      try {
+        const format = $('meshFormatSelect').value;
+        log(`Triggering marching cubes for Mask ${state.selectedMaskId} (Format: ${format.toUpperCase()})...`, 'info');
+        const res = await request(`/meshes/reconstruct/${state.selectedMaskId}`, 'POST', {
+          smooth_iterations: parseInt($('smoothInput').value),
+          decimate_ratio: parseFloat($('decimateInput').value),
+          export_format: format
+        });
+        log('Mesh reconstructed successfully. ID: ' + res.data.id, 'success');
+        refreshMeshes();
+        state.selectedMeshId = res.data.id;
+        loadGeometry(res.data.id, format, 'bone');
+        checkPrintability(res.data.id);
+      } catch (err) {
+        log('Mesh reconstruction failed: ' + err.message, 'error');
+      }
+    }
+
+    // ---------- Implant Recommendations ----------
+    async function refreshImplants() {
+      try {
+        const res = await request('/implants/all');
+        const listEl = $('implantList');
+        listEl.innerHTML = '';
+        (res.data || []).forEach(i => {
+          const card = document.createElement('div');
+          card.className = 'item-card';
+          if (state.selectedImplantId === i.id) card.className += ' active';
+          card.onclick = () => {
+            document.querySelectorAll('#implantList .item-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            state.selectedImplantId = i.id;
+            loadGeometry(i.id, i.file_path.split('.').pop(), 'implant');
+          };
+          card.innerHTML = `
+            <div class="item-card-title"><span>Implant ID: ${i.id}</span> <span style="font-size:10px; color:var(--success);">${i.method}</span></div>
+            <div class="item-card-sub">Triangles: ${i.triangle_count.toLocaleString()} | format: ${i.file_path.split('.').pop().toUpperCase()}</div>
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        log('Fetch implants failed: ' + err.message, 'error');
+      }
+    }
+
+    async function runImplant() {
+      if (!state.selectedMaskId) {
+        log('Please select a segmentation bone mask first.', 'warning');
+        return;
+      }
+      try {
+        const model = $('implantModelSelect').value;
+        const format = $('implantFormatSelect').value;
+        log(`Generating recommended PSI Implant (Model: ${model}, Format: ${format.toUpperCase()})...`, 'info');
+        
+        const res = await request(`/implants/recommend/${state.selectedMaskId}`, 'POST', {
+          model_name: model,
+          smooth_iterations: parseInt($('smoothInput').value),
+          decimate_ratio: parseFloat($('decimateInput').value),
+          export_format: format
+        });
+        
+        log('Implant generated. PSI ID: ' + res.data.id, 'success');
+        refreshImplants();
+        state.selectedImplantId = res.data.id;
+        loadGeometry(res.data.id, format, 'implant');
+      } catch (err) {
+        log('Implant generation failed: ' + err.message, 'error');
+      }
+    }
+
+    // ---------- Printability Check ----------
+    async function checkPrintability(meshId) {
+      try {
+        const res = await request(`/meshes/${meshId}/printability`);
+        const r = res.data;
+        
+        $('printReportPanel').classList.remove('hidden');
+        $('printWatertight').innerText = r.is_watertight ? 'YES' : 'NO';
+        $('printWatertight').style.color = r.is_watertight ? 'var(--success)' : 'var(--danger)';
+        
+        $('printConsistent').innerText = r.winding_consistent ? 'YES' : 'NO';
+        $('printConsistent').style.color = r.winding_consistent ? 'var(--success)' : 'var(--danger)';
+        
+        $('printEuler').innerText = r.euler_number;
+        $('printArea').innerText = Math.round(r.area_mm2).toLocaleString() + ' mm²';
+        $('printVolume').innerText = Math.round(r.volume_mm3).toLocaleString() + ' mm³';
+        
+        const pill = $('printReadyPill');
+        pill.innerText = r.ready_to_print ? 'READY TO PRINT' : 'NOT READY';
+        pill.style.background = r.ready_to_print ? 'rgba(63,185,80,0.15)' : 'rgba(248,81,73,0.15)';
+        pill.style.color = r.ready_to_print ? 'var(--success)' : 'var(--danger)';
+        pill.style.border = `1px solid ${r.ready_to_print ? 'var(--success)' : 'var(--danger)'}`;
+        
+        const issuesPanel = $('printIssuesList');
+        const ul = $('printIssuesUl');
+        ul.innerHTML = '';
+        if (r.issues.length > 0) {
+          issuesPanel.classList.remove('hidden');
+          r.issues.forEach(iss => {
+            const li = document.createElement('li');
+            li.innerText = iss;
+            ul.appendChild(li);
+          });
+        } else {
+          issuesPanel.classList.add('hidden');
+        }
+      } catch (err) {
+        log('Printability check failed: ' + err.message, 'error');
+      }
+    }
+
+    // ---------- ThreeJS 3D Viewport engine ----------
+    let scene, camera, renderer, controls;
+    let boneMesh = null, implantMesh = null;
+
+    function init3D() {
+      const container = $('viewport');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a0d14);
+
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 5000);
+      camera.position.set(150, 150, 150);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // Lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      
+      const key = new THREE.DirectionalLight(0xffffff, 0.9);
+      key.position.set(100, 100, 100);
+      scene.add(key);
+      
+      const fill = new THREE.DirectionalLight(0x88aaff, 0.4);
+      fill.position.set(-100, -50, -100);
+      scene.add(fill);
+
+      // Grid helper
+      const grid = new THREE.GridHelper(400, 20, 0x30363d, 0x21262d);
+      scene.add(grid);
+
+      window.addEventListener('resize', onResize);
+      animate();
+    }
+
+    function onResize() {
+      const container = $('viewport');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    async function loadGeometry(id, format, target) {
+      log(`Fetching and parsing ${target} mesh (ID: ${id}, format: ${format.toUpperCase()})...`, 'info');
+      const endpoint = target === 'bone' ? `/meshes/${id}/download` : `/implants/${id}/download`;
+      
+      try {
+        const response = await fetch(`${state.apiUrl}${endpoint}`, {
+          headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {}
+        });
+        
+        if (!response.ok) throw new Error('Download request failed');
+        const buffer = await response.arrayBuffer();
+        let geom = null;
+
+        if (format === 'stl') {
+          geom = new THREE.STLLoader().parse(buffer);
+        } else if (format === 'ply') {
+          geom = new THREE.PLYLoader().parse(buffer);
+        } else if (format === 'obj') {
+          const text = new TextDecoder().decode(buffer);
+          const objGroup = new THREE.OBJLoader().parse(text);
+          objGroup.traverse((child) => {
+            if (child.isMesh) {
+              geom = child.geometry;
+            }
+          });
+        }
+
+        if (!geom) throw new Error('Could not parse geometry buffer format');
+
+        geom.computeVertexNormals();
+        geom.center();
+
+        if (target === 'bone') {
+          if (boneMesh) { scene.remove(boneMesh); boneMesh.geometry.dispose(); }
+          const mat = new THREE.MeshPhongMaterial({ color: 0xe6edf3, specular: 0x333333, shininess: 25, wireframe: state.wireframe });
+          boneMesh = new THREE.Mesh(geom, mat);
+          scene.add(boneMesh);
+          frameObject(geom);
+          
+          // Wire up HUD button
+          const btn = $('downloadBoneBtn');
+          btn.classList.remove('hidden');
+          btn.onclick = () => triggerDownload(id, format, 'bone');
+          btn.innerText = `📥 Download Bone (${format.toUpperCase()})`;
+        } else {
+          if (implantMesh) { scene.remove(implantMesh); implantMesh.geometry.dispose(); }
+          // Glowing Gold/Purple specular material for PSI Implant
+          const mat = new THREE.MeshPhongMaterial({ color: 0xf2c94c, specular: 0xffffff, shininess: 60, wireframe: state.wireframe });
+          implantMesh = new THREE.Mesh(geom, mat);
+          scene.add(implantMesh);
+          
+          // Wire up HUD button
+          const btn = $('downloadImplantBtn');
+          btn.classList.remove('hidden');
+          btn.style.display = 'block';
+          btn.onclick = () => triggerDownload(id, format, 'implant');
+          btn.innerText = `📥 Download Implant (${format.toUpperCase()})`;
+        }
+
+        log(`Successfully rendered 3D ${target} mesh in viewport.`, 'success');
+      } catch (err) {
+        log(`Failed parsing 3D mesh: ${err.message}`, 'error');
+      }
+    }
+
+    function frameObject(geometry) {
+      geometry.computeBoundingSphere();
+      const r = geometry.boundingSphere.radius || 100;
+      const d = r * 2.6;
+      camera.position.set(d, d * 0.8, d);
+      camera.near = r / 100;
+      camera.far = r * 100;
+      camera.updateProjectionMatrix();
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function toggleWireframe() {
+      state.wireframe = !state.wireframe;
+      if (boneMesh) boneMesh.material.wireframe = state.wireframe;
+      if (implantMesh) implantMesh.material.wireframe = state.wireframe;
+      log('Toggled wireframe mode to: ' + state.wireframe, 'info');
+    }
+
+    function clearCanvas() {
+      if (boneMesh) { scene.remove(boneMesh); boneMesh.geometry.dispose(); boneMesh = null; }
+      if (implantMesh) { scene.remove(implantMesh); implantMesh.geometry.dispose(); implantMesh = null; }
+      $('downloadBoneBtn').classList.add('hidden');
+      $('downloadImplantBtn').classList.add('hidden');
+      $('downloadImplantBtn').style.display = 'none';
+      $('printReportPanel').classList.add('hidden');
+      log('Cleared 3D canvas viewport.', 'info');
+    }
+
+    async function triggerDownload(id, format, target) {
+      try {
+        const endpoint = target === 'bone' ? `/meshes/${id}/download` : `/implants/${id}/download`;
+        const res = await fetch(`${state.apiUrl}${endpoint}`, {
+          headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {}
+        });
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${target}_${id}.${format}`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        log(`Downloaded ${target} mesh file.`, 'success');
+      } catch (err) {
+        log('Download failed: ' + err.message, 'error');
+      }
+    }
+
+    function restoreSession() {
+      const token = localStorage.getItem('token');
+      const username = localStorage.getItem('username') || 'admin';
+      const apiUrl = localStorage.getItem('apiUrl') || 'http://localhost:8000/api/v2';
+      if (token) {
+        state.token = token;
+        state.apiUrl = apiUrl;
+        $('apiUrlInput').value = apiUrl;
+        $('username-display').innerText = username;
+        $('auth-logged-in').classList.remove('hidden');
+        $('auth-logged-out').classList.add('hidden');
+        $('clinical-workflows').classList.remove('hidden');
+        log('Session restored from cache. System online.', 'success');
+        refreshVolumes();
+        refreshMeshes();
+        refreshImplants();
+      }
+    }
+
+    // Initialize 3D on load
+    init3D();
+    restoreSession();
+  </script>
+</body>
+</html>

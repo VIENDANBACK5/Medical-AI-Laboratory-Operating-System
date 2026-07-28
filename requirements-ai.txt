@@ -1,0 +1,8 @@
+# Optional heavy AI extras for real pretrained segmentation models.
+# Install on top of requirements.txt only on machines that will run inference:
+#   pip install -r requirements.txt -r requirements-ai.txt
+#
+# These pull large model weights on first use and benefit greatly from a CUDA GPU
+# (CPU inference works but is slow -- keep TOTALSEG_FAST=true for the 3mm model).
+nibabel==5.2.1
+totalsegmentator==2.4.0

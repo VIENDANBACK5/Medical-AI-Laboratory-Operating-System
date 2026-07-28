@@ -1,0 +1,23 @@
+{
+  "name": "medai-os-viewer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MedAI-OS React 3D viewer: CT -> Segmentation -> Mesh -> Implant -> STL/OBJ/PLY",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.99.0",
+    "@react-three/fiber": "^8.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.160.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.2.0"
+  }
+}
