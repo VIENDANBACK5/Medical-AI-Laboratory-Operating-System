@@ -108,3 +108,69 @@ def test_async_inference_and_download_flow(client):
     # Verify mask detail API returns error
     get_after_delete = client.get(f"/api/v1/inference/masks/{mask_id}")
     assert get_after_delete.status_code != 200
+
+
+def test_benchmark_endpoints(client):
+    # 1. Upload volume and create a mask
+    zip_bytes = create_dicom_zip_bytes()
+    upload_res = client.post(
+        "/api/v1/volumes/upload",
+        files={"file": ("dicom_scan.zip", zip_bytes, "application/zip")}
+    )
+    assert upload_res.status_code == 201
+    volume_id = upload_res.json()["data"]["id"]
+
+    trigger_res = client.post(
+        f"/api/v1/inference/segment/{volume_id}",
+        json={"model_name": "mock_bone_seg"}
+    )
+    assert trigger_res.status_code == 202
+    task_id = trigger_res.json()["data"]["task_id"]
+
+    status_res = client.get(f"/api/v1/inference/tasks/{task_id}")
+    assert status_res.status_code == 200
+    mask_id = status_res.json()["data"]["result_id"]
+
+    # 2. Test Leaderboard endpoint
+    lb_res = client.get("/api/v1/inference/benchmark/leaderboard")
+    assert lb_res.status_code == 200
+    lb_json = lb_res.json()
+    assert "data" in lb_json
+    lb_data = lb_json["data"]["leaderboard"]
+    assert isinstance(lb_data, list)
+    assert len(lb_data) >= 1
+    mock_entry = next((item for item in lb_data if item["model_name"] == "mock_bone_seg"), None)
+    assert mock_entry is not None
+    assert mock_entry["run_count"] >= 1
+
+    # 3. Test Compare endpoint
+    cmp_res = client.get(f"/api/v1/inference/benchmark/compare?mask_ids={mask_id}")
+    assert cmp_res.status_code == 200
+    cmp_json = cmp_res.json()
+    assert "data" in cmp_json
+    cmp_data = cmp_json["data"]["results"]
+    assert isinstance(cmp_data, list)
+    assert len(cmp_data) == 1
+    assert cmp_data[0]["mask_id"] == mask_id
+    assert cmp_data[0]["model_name"] == "mock_bone_seg"
+
+
+def test_persistent_task_recovery():
+    service = AIInferenceService()
+    task_id = service.queue_inference(volume_id=999, model_name="mock_bone_seg")
+    
+    # State exists in memory and disk
+    status_mem = service.get_task_status(task_id)
+    assert status_mem is not None
+    assert status_mem["status"] == "PENDING"
+    
+    # Clear in-memory dictionary to simulate server reload
+    service.tasks.clear()
+    assert len(service.tasks) == 0
+    
+    # Recover from disk
+    status_disk = service.get_task_status(task_id)
+    assert status_disk is not None
+    assert status_disk["task_id"] == task_id
+    assert status_disk["volume_id"] == 999
+

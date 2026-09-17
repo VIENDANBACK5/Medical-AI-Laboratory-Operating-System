@@ -161,6 +161,95 @@ def get_mask_detail(mask_id: int) -> Any:
 
 
 @router.get(
+    "/benchmark/compare",
+    response_model=DataResponse[Any],
+    status_code=status.HTTP_200_OK,
+)
+def benchmark_compare(mask_ids: str = "") -> Any:
+    """
+    Compare inference metrics across multiple segmentation masks.
+    Pass mask_ids as comma-separated integers: ?mask_ids=1,2,3
+    Returns a comparison table of model_name, inference_time_sec, vram_consumed_mb.
+    """
+    try:
+        if not mask_ids.strip():
+            # Return all masks as benchmark overview
+            data, _ = inference_service.get_all(sort_params=None)
+        else:
+            ids = [int(x.strip()) for x in mask_ids.split(",") if x.strip().isdigit()]
+            data = [inference_service.get_by_id(id=mid) for mid in ids]
+
+        comparison = []
+        for mask in data:
+            comparison.append({
+                "mask_id":            mask.id,
+                "volume_id":          mask.volume_id,
+                "model_name":         mask.model_name,
+                "model_version":      mask.model_version,
+                "inference_time_sec": round(mask.inference_time_sec or 0, 3),
+                "vram_consumed_mb":   round(mask.vram_consumed_mb or 0, 1),
+                "created_at":         str(mask.created_at) if hasattr(mask, "created_at") else None,
+            })
+
+        # Sort by inference_time_sec ascending (fastest first = leaderboard)
+        comparison.sort(key=lambda x: x["inference_time_sec"])
+
+        return DataResponse(
+            http_code=status.HTTP_200_OK,
+            data={"results": comparison, "count": len(comparison)},
+        )
+    except Exception as e:
+        raise CustomException(exception=e)
+
+
+@router.get(
+    "/benchmark/leaderboard",
+    response_model=DataResponse[Any],
+    status_code=status.HTTP_200_OK,
+)
+def benchmark_leaderboard() -> Any:
+    """
+    Returns a leaderboard of all registered AI models ranked by average inference speed.
+    Groups masks by model_name and computes: count, avg_time, avg_vram.
+    """
+    try:
+        data, _ = inference_service.get_all(sort_params=None)
+
+        stats: dict = {}
+        for mask in data:
+            name = mask.model_name or "unknown"
+            if name not in stats:
+                stats[name] = {
+                    "model_name": name,
+                    "run_count":  0,
+                    "total_time": 0.0,
+                    "total_vram": 0.0,
+                }
+            stats[name]["run_count"]  += 1
+            stats[name]["total_time"] += mask.inference_time_sec or 0
+            stats[name]["total_vram"] += mask.vram_consumed_mb   or 0
+
+        leaderboard = []
+        for s in stats.values():
+            n = s["run_count"]
+            leaderboard.append({
+                "model_name":       s["model_name"],
+                "run_count":        n,
+                "avg_inference_sec": round(s["total_time"] / n, 3) if n else 0,
+                "avg_vram_mb":      round(s["total_vram"] / n, 1) if n else 0,
+            })
+
+        leaderboard.sort(key=lambda x: x["avg_inference_sec"])
+
+        return DataResponse(
+            http_code=status.HTTP_200_OK,
+            data={"leaderboard": leaderboard},
+        )
+    except Exception as e:
+        raise CustomException(exception=e)
+
+
+@router.get(
     "/masks/{mask_id}/download",
     status_code=status.HTTP_200_OK,
 )

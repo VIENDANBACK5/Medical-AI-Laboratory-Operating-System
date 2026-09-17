@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi.exceptions import ValidationException
 import uvicorn
@@ -18,7 +19,19 @@ from app.utils.exception_handler import (
 )
 
 logging.config.fileConfig(settings.LOGGING_CONFIG_FILE, disable_existing_loggers=False)
+logger = logging.getLogger(__name__)
 Base.metadata.create_all(bind=engine)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: warm up AI Engine Manager on startup."""
+    from app.services.ai.manager import AIEngineManager
+    manager = AIEngineManager()
+    plugin_names = list(manager.plugins.keys())
+    logger.info(f"[MedAI-OS] AI Engine ready — {len(plugin_names)} plugin(s): {plugin_names}")
+    yield
+    logger.info("[MedAI-OS] Shutting down.")
 
 
 def get_application() -> FastAPI:
@@ -28,20 +41,30 @@ def get_application() -> FastAPI:
         redoc_url="/re-docs",
         openapi_url=f"{settings.API_PREFIX}/openapi.json",
         description="""
-        Base frame with FastAPI micro framework + Postgresql
-            - Login/Register with JWT
-            - Permission
-            - CRUD User
-            - Unit testing with Pytest
-            - Dockerize
+## MedAI-OS — Medical AI Laboratory Operating System
+
+An end-to-end modular research platform for 3D medical imaging (DICOM/NIfTI),
+deep learning segmentation, computational geometry, and AI implant synthesis.
+
+### Core Capabilities
+- **DICOM/NIfTI Ingestion**: Upload and resample volumetric CT scans
+- **Plugin AI Engine**: Plug-and-play segmentation (TotalSegmentator, MONAI, MedSAM, Mock)
+- **3D Geometry Pipeline**: Marching Cubes → Smoothing → Decimation → Watertight Mesh
+- **AI Implant Synthesis**: Bilateral symmetry mirroring and generative shape completion
+- **Research SDK**: Standardized Dice/HD95/Chamfer benchmarking and experiment reporting
         """,
+        version="2.0.0",
+        contact={"name": "MedAI-OS Research Team", "url": "https://github.com/VIENDANBACK5/Medical-AI-Laboratory-Operating-System"},
+        license_info={"name": "MIT"},
         debug=settings.DEBUG,
+        lifespan=lifespan,
         swagger_ui_init_oauth={
             "clientId": settings.KEYCLOAK_CLIENT_ID,
             "scopes": {"openid": "OpenID Connect scope"},
         },
         swagger_ui_parameters={
             "docExpansion": "none",
+            "defaultModelsExpandDepth": -1,
         },
     )
     application.add_middleware(
